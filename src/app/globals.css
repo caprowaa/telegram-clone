@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@theme {
+  --color-tg-primary: #3390ec;
+  --color-tg-sidebar: #ffffff;
+  --color-tg-chat-bg: #8db088; 
+  --color-bubble-in: #ffffff;
+  --color-bubble-out: #eeffde;
+  --color-tg-text: #000000;
+  --color-tg-border: #dfe1e5;
+  --color-dark-sidebar: #212121;
+  --color-dark-chat-bg: #0f0f0f;
+  --color-dark-bubble-in: #2b2b2b;
+  --color-dark-bubble-out: #3d6a97;
+  --color-dark-text: #ffffff;
+  --color-dark-border: #2f2f2f;
+}
+
+@layer base {
+  body { @apply antialiased transition-colors duration-200; margin: 0; }
+  .dark {
+    --color-tg-sidebar: var(--color-dark-sidebar);
+    --color-tg-chat-bg: var(--color-dark-chat-bg);
+    --color-bubble-in: var(--color-dark-bubble-in);
+    --color-bubble-out: var(--color-dark-bubble-out);
+    --color-tg-text: var(--color-dark-text);
+    --color-tg-border: var(--color-dark-border);
+  }
+}
+
+.tg-wallpaper {
+  background-color: var(--color-tg-chat-bg);
+  background-image: url("https://www.transparenttextures.com/patterns/cartographer.png");
+  background-attachment: fixed;
+}
