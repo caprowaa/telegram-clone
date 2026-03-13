@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, push, onValue } from "firebase/database";
 
-// ТВОЙ FIREBASE CONFIG
+// ТВОЙ FIREBASE CONFIG (Оставляем как был)
 const firebaseConfig = {
   apiKey: "AIzaSyAXOxuXyi1I8-uR1ThadFeYWsrBWiCnov8",
   authDomain: "captowa.firebaseapp.com",
@@ -22,7 +22,6 @@ const db = getDatabase(app);
 const AudioPlayer = ({ src }: { src: string }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [volume, setVolume] = useState(1);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const togglePlay = () => {
@@ -40,23 +39,37 @@ const AudioPlayer = ({ src }: { src: string }) => {
           <input type="range" value={progress} onChange={(e) => audioRef.current!.currentTime = (Number(e.target.value) / 100) * audioRef.current!.duration} className="w-full" />
         </div>
       </div>
-      <div className="flex items-center gap-2 border-t border-black/5 pt-2">
-        <span className="text-xs">🔊</span>
-        <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => {setVolume(Number(e.target.value)); audioRef.current!.volume = Number(e.target.value)}} className="flex-1 h-1" />
-        <span className="text-[10px] font-bold">{Math.round(volume * 100)}%</span>
-      </div>
     </div>
   );
 };
 
 export default function TelegramClone() {
-  const [user, setUser] = useState({ name: "User_" + Math.floor(Math.random() * 100) });
+  // Изначально ставим пустой ник, чтобы не было конфликтов при загрузке
+  const [user, setUser] = useState({ name: "Загрузка..." });
   const [messages, setMessages] = useState<any[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isNightMode, setIsNightMode] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 1. ПРИ ЗАГРУЗКЕ: Достаем ник из памяти браузера
+  useEffect(() => {
+    const savedName = localStorage.getItem('tg_user_name');
+    if (savedName) {
+      setUser({ name: savedName });
+    } else {
+      const randomName = "User_" + Math.floor(Math.random() * 100);
+      setUser({ name: randomName });
+      localStorage.setItem('tg_user_name', randomName);
+    }
+  }, []);
+
+  // 2. ПРИ ИЗМЕНЕНИИ: Сохраняем ник в память
+  const updateName = (newName: string) => {
+    setUser({ name: newName });
+    localStorage.setItem('tg_user_name', newName);
+  };
 
   useEffect(() => {
     const messagesRef = ref(db, 'messages');
@@ -83,10 +96,7 @@ export default function TelegramClone() {
     const file = e.target.files?.[0];
     if (!file) return;
     const url = URL.createObjectURL(file);
-    let type = 'file';
-    if (file.type.startsWith('image/')) type = 'image';
-    else if (file.type.startsWith('audio/')) type = 'audio';
-    handleSend(type, url);
+    handleSend('image', url);
   };
 
   return (
@@ -97,20 +107,27 @@ export default function TelegramClone() {
           <button onClick={() => setIsNightMode(!isNightMode)} className="cursor-pointer text-lg">{isNightMode ? '☀️' : '🌙'}</button>
         </div>
         <div className="bg-tg-primary/10 p-3 rounded-2xl border border-tg-primary/20">
-          <p className="text-[10px] opacity-50 uppercase font-black mb-1 text-tg-primary">Твой ник:</p>
-          <input className="bg-transparent font-black outline-none w-full text-lg" value={user.name} onChange={(e) => setUser({name: e.target.value})} />
+          <p className="text-[10px] opacity-50 uppercase font-black mb-1 text-tg-primary">Твой ник (сохранится):</p>
+          <input 
+            className="bg-transparent font-black outline-none w-full text-lg" 
+            value={user.name} 
+            onChange={(e) => updateName(e.target.value)} 
+          />
         </div>
-        <div className="p-4 bg-tg-primary text-white rounded-2xl font-black text-center shadow-lg">🌐 ВЕСЬ МИР ТУТ</div>
+        <div className="p-4 bg-tg-primary text-white rounded-2xl font-black text-center shadow-lg uppercase">🌐 Online</div>
       </aside>
 
       <main className="flex-1 flex flex-col tg-wallpaper relative">
-        <header className="h-[56px] bg-tg-sidebar/80 backdrop-blur-md border-b border-tg-border flex items-center px-6 font-black text-lg z-10 transition-colors">LIVE CHAT</header>
+        <header className="h-[56px] bg-tg-sidebar/80 backdrop-blur-md border-b border-tg-border flex items-center px-6 font-black text-lg z-10">
+          GLOBAL CHAT
+        </header>
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
           {messages.map((msg) => (
             <div key={msg.id} className={`max-w-[80%] p-3 px-5 rounded-2xl shadow-md border border-black/5 ${msg.sender === user.name ? 'self-end bg-bubble-out text-black rounded-br-none' : 'self-start bg-bubble-in text-tg-text rounded-bl-none'}`}>
               <div className="text-[10px] font-black text-tg-primary mb-1 uppercase opacity-60">{msg.sender}</div>
               <div className="flex flex-col gap-2">
-                {msg.type === 'image' && <img src={msg.fileUrl} className="rounded-xl max-h-[350px] shadow-sm" />}
+                {msg.type === 'image' && <img src={msg.fileUrl} className="rounded-xl max-h-[350px]" />}
                 {msg.type === 'audio' && <AudioPlayer src={msg.fileUrl} />}
                 {msg.text && <p className="whitespace-pre-wrap leading-tight font-medium">{msg.text}</p>}
               </div>
@@ -118,9 +135,10 @@ export default function TelegramClone() {
             </div>
           ))}
         </div>
+
         <footer className="p-4 flex flex-col items-center gap-2">
           {showEmoji && (
-            <div className="bg-tg-sidebar p-3 mb-2 rounded-2xl shadow-2xl flex gap-3 border border-tg-border">
+            <div className="bg-tg-sidebar p-3 mb-2 rounded-2xl shadow-2xl flex gap-3 border border-tg-border animate-in fade-in zoom-in-95">
               {['😊', '😂', '🔥', '👍', '❤️', '🤔', '😎'].map(e => <span key={e} onClick={() => setInputValue(v => v + e)} className="text-3xl cursor-pointer hover:scale-125 transition-transform">{e}</span>)}
             </div>
           )}
