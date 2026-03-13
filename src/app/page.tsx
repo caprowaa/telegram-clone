@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { getDatabase, ref, push, onValue } from "firebase/database";
 
-// ТВОЙ FIREBASE CONFIG (Оставляем как был)
 const firebaseConfig = {
   apiKey: "AIzaSyAXOxuXyi1I8-uR1ThadFeYWsrBWiCnov8",
   authDomain: "captowa.firebaseapp.com",
@@ -15,141 +14,159 @@ const firebaseConfig = {
   databaseURL: "https://captowa-default-rtdb.asia-southeast1.firebasedatabase.app/" 
 };
 
-const app = initializeApp(firebaseConfig);
+// Инициализируем Firebase только один раз
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const db = getDatabase(app);
 
-// КАСТОМНЫЙ ПЛЕЕР
-const AudioPlayer = ({ src }: { src: string }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const audioRef = useRef<HTMLAudioElement>(null);
-
-  const togglePlay = () => {
-    if (isPlaying) audioRef.current?.pause();
-    else audioRef.current?.play();
-    setIsPlaying(!isPlaying);
-  };
-
-  return (
-    <div className="flex flex-col gap-2 p-3 bg-black/5 dark:bg-white/5 rounded-xl min-w-[240px] border border-black/5">
-      <audio ref={audioRef} src={src} onTimeUpdate={() => setProgress((audioRef.current!.currentTime / audioRef.current!.duration) * 100)} onEnded={() => setIsPlaying(false)} />
-      <div className="flex items-center gap-3">
-        <button onClick={togglePlay} className="w-10 h-10 flex items-center justify-center bg-tg-primary text-white rounded-full shadow-md shrink-0 cursor-pointer">{isPlaying ? '⏸' : '▶'}</button>
-        <div className="flex-1 flex flex-col gap-1">
-          <input type="range" value={progress} onChange={(e) => audioRef.current!.currentTime = (Number(e.target.value) / 100) * audioRef.current!.duration} className="w-full" />
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export default function TelegramClone() {
-  // Изначально ставим пустой ник, чтобы не было конфликтов при загрузке
-  const [user, setUser] = useState({ name: "Загрузка..." });
+  const [user, setUser] = useState({ name: "User" });
   const [messages, setMessages] = useState<any[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isNightMode, setIsNightMode] = useState(false);
-  const [showEmoji, setShowEmoji] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false); // Флаг готовности
   const scrollRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. ПРИ ЗАГРУЗКЕ: Достаем ник из памяти браузера
+  // 1. ЗАГРУЗКА ДАННЫХ ПРИ СТАРТЕ
   useEffect(() => {
+    // Достаем ник и тему из памяти
     const savedName = localStorage.getItem('tg_user_name');
-    if (savedName) {
-      setUser({ name: savedName });
-    } else {
-      const randomName = "User_" + Math.floor(Math.random() * 100);
-      setUser({ name: randomName });
-      localStorage.setItem('tg_user_name', randomName);
-    }
+    const savedTheme = localStorage.getItem('tg_night_mode');
+    
+    if (savedName) setUser({ name: savedName });
+    if (savedTheme === 'true') setIsNightMode(true);
+    
+    setIsLoaded(true); // Готово к работе
+
+    // Подключаемся к базе
+    const messagesRef = ref(db, 'messages');
+    return onValue(messagesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setMessages(Object.keys(data).map(key => ({ id: key, ...data[key] })));
+      }
+    });
   }, []);
 
-  // 2. ПРИ ИЗМЕНЕНИИ: Сохраняем ник в память
-  const updateName = (newName: string) => {
+  // 2. СОХРАНЕНИЕ НИКА
+  const changeName = (newName: string) => {
     setUser({ name: newName });
     localStorage.setItem('tg_user_name', newName);
   };
 
+  // 3. СОХРАНЕНИЕ ТЕМЫ
   useEffect(() => {
-    const messagesRef = ref(db, 'messages');
-    return onValue(messagesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) setMessages(Object.keys(data).map(key => ({ id: key, ...data[key] })));
-    });
-  }, []);
+    if (!isLoaded) return;
+    document.body.className = isNightMode ? 'dark' : '';
+    localStorage.setItem('tg_night_mode', isNightMode.toString());
+  }, [isNightMode, isLoaded]);
 
+  // СКРОЛЛ
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-    document.body.className = isNightMode ? 'dark' : '';
-  }, [messages, isNightMode]);
+  }, [messages]);
 
-  const handleSend = (type = 'text', fileUrl = '') => {
-    if (!inputValue.trim() && !fileUrl) return;
+  const handleSend = () => {
+    if (!inputValue.trim()) return;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    push(ref(db, 'messages'), { text: inputValue, sender: user.name, type, fileUrl, time });
+    push(ref(db, 'messages'), { 
+      text: inputValue, 
+      sender: user.name, 
+      time 
+    }).catch(err => console.error("Ошибка отправки:", err));
     setInputValue('');
-    setShowEmoji(false);
   };
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    handleSend('image', url);
-  };
+  if (!isLoaded) return <div className="h-screen w-full flex items-center justify-center bg-white text-black">Загрузка чата...</div>;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-tg-sidebar text-tg-text">
-      <aside className="w-[300px] border-r border-tg-border p-4 flex flex-col gap-4 shadow-xl">
-        <div className="font-black flex justify-between items-center text-xl uppercase tracking-tighter">
-          Telegram Live
-          <button onClick={() => setIsNightMode(!isNightMode)} className="cursor-pointer text-lg">{isNightMode ? '☀️' : '🌙'}</button>
+    <div className="flex h-screen w-full overflow-hidden bg-tg-sidebar text-tg-text font-sans transition-colors duration-300">
+      
+      {/* ЛЕВАЯ ПАНЕЛЬ */}
+      <aside className="w-[320px] border-r border-tg-border p-5 flex flex-col gap-6 bg-tg-sidebar shadow-2xl z-20">
+        <div className="flex justify-between items-center">
+          <h1 className="font-black text-2xl tracking-tighter text-tg-primary">TELEGRAM LIVE</h1>
+          <button 
+            onClick={() => setIsNightMode(!isNightMode)} 
+            className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5 transition cursor-pointer text-xl"
+          >
+            {isNightMode ? '☀️' : '🌙'}
+          </button>
         </div>
-        <div className="bg-tg-primary/10 p-3 rounded-2xl border border-tg-primary/20">
-          <p className="text-[10px] opacity-50 uppercase font-black mb-1 text-tg-primary">Твой ник (сохранится):</p>
-          <input 
-            className="bg-transparent font-black outline-none w-full text-lg" 
-            value={user.name} 
-            onChange={(e) => updateName(e.target.value)} 
-          />
+
+        <div className="space-y-4">
+          <div className="bg-tg-primary/5 p-4 rounded-2xl border border-tg-primary/10">
+            <label className="text-[10px] font-black uppercase opacity-40 mb-2 block tracking-widest text-tg-primary">Твой профиль</label>
+            <input 
+              className="bg-transparent font-black outline-none w-full text-lg" 
+              value={user.name} 
+              onChange={(e) => changeName(e.target.value)} 
+              placeholder="Введите имя..."
+            />
+          </div>
+          <div className="p-4 bg-tg-primary text-white rounded-2xl font-black text-center shadow-lg transform active:scale-95 transition cursor-default">
+            🌐 GLOBAL CHAT
+          </div>
         </div>
-        <div className="p-4 bg-tg-primary text-white rounded-2xl font-black text-center shadow-lg uppercase">🌐 Online</div>
+
+        <div className="mt-auto text-[10px] opacity-30 text-center font-bold">
+          CONNECTED TO FIREBASE SIN
+        </div>
       </aside>
 
+      {/* ОКНО ЧАТА */}
       <main className="flex-1 flex flex-col tg-wallpaper relative">
-        <header className="h-[56px] bg-tg-sidebar/80 backdrop-blur-md border-b border-tg-border flex items-center px-6 font-black text-lg z-10">
-          GLOBAL CHAT
+        <header className="h-[64px] bg-tg-sidebar/80 backdrop-blur-lg border-b border-tg-border flex items-center px-8 font-black text-xl z-10">
+          #general
         </header>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-          {messages.map((msg) => (
-            <div key={msg.id} className={`max-w-[80%] p-3 px-5 rounded-2xl shadow-md border border-black/5 ${msg.sender === user.name ? 'self-end bg-bubble-out text-black rounded-br-none' : 'self-start bg-bubble-in text-tg-text rounded-bl-none'}`}>
-              <div className="text-[10px] font-black text-tg-primary mb-1 uppercase opacity-60">{msg.sender}</div>
-              <div className="flex flex-col gap-2">
-                {msg.type === 'image' && <img src={msg.fileUrl} className="rounded-xl max-h-[350px]" />}
-                {msg.type === 'audio' && <AudioPlayer src={msg.fileUrl} />}
-                {msg.text && <p className="whitespace-pre-wrap leading-tight font-medium">{msg.text}</p>}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+          {messages.length > 0 ? messages.map((msg) => (
+            <div 
+              key={msg.id} 
+              className={`max-w-[85%] p-3 px-5 rounded-3xl shadow-md border border-black/5 transition-all ${
+                msg.sender === user.name 
+                ? 'self-end bg-bubble-out text-black rounded-br-none' 
+                : 'self-start bg-bubble-in text-tg-text rounded-bl-none'
+              }`}
+            >
+              <div className="text-[10px] font-black text-tg-primary mb-1 uppercase tracking-tight">
+                {msg.sender === user.name ? 'Вы' : msg.sender}
               </div>
-              <span className="text-[9px] opacity-40 float-right mt-1 font-black">{msg.time}</span>
+              <p className="whitespace-pre-wrap leading-tight font-medium text-[15px]">{msg.text}</p>
+              <div className="flex items-center justify-end gap-1 mt-1 opacity-40">
+                <span className="text-[9px] font-black">{msg.time}</span>
+                {msg.sender === user.name && <span className="text-[10px]">✓✓</span>}
+              </div>
             </div>
-          ))}
-        </div>
-
-        <footer className="p-4 flex flex-col items-center gap-2">
-          {showEmoji && (
-            <div className="bg-tg-sidebar p-3 mb-2 rounded-2xl shadow-2xl flex gap-3 border border-tg-border animate-in fade-in zoom-in-95">
-              {['😊', '😂', '🔥', '👍', '❤️', '🤔', '😎'].map(e => <span key={e} onClick={() => setInputValue(v => v + e)} className="text-3xl cursor-pointer hover:scale-125 transition-transform">{e}</span>)}
+          )) : (
+            <div className="m-auto bg-black/20 text-white px-6 py-2 rounded-full backdrop-blur-md font-bold">
+              Сообщений пока нет. Начни первым!
             </div>
           )}
-          <div className="max-w-[750px] w-full flex items-end gap-2">
-            <div className="flex-1 flex items-center gap-2 bg-tg-sidebar rounded-3xl p-3 shadow-2xl border border-tg-border relative">
-              <button onClick={() => setShowEmoji(!showEmoji)} className="text-2xl opacity-40 hover:opacity-100 transition cursor-pointer">😊</button>
-              <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Напиши сообщение..." className="flex-1 outline-none bg-transparent" />
-              <input type="file" ref={fileInputRef} className="hidden" onChange={onFile} />
-              <button onClick={() => fileInputRef.current?.click()} className="text-2xl opacity-40 hover:opacity-100 transition cursor-pointer">📎</button>
+        </div>
+
+        <footer className="p-6 flex justify-center w-full z-10">
+          <div className="max-w-[800px] w-full flex items-end gap-3 px-2">
+            <div className="flex-1 flex items-center gap-3 bg-tg-sidebar rounded-[24px] p-3 shadow-2xl border border-tg-border relative transition-all focus-within:ring-2 focus-within:ring-tg-primary/30">
+              <button className="text-2xl opacity-30 hover:opacity-100 transition cursor-pointer">📎</button>
+              <input 
+                value={inputValue} 
+                onChange={(e) => setInputValue(e.target.value)} 
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
+                placeholder="Напиши сообщение..." 
+                className="flex-1 outline-none bg-transparent py-1 text-[16px]" 
+              />
             </div>
-            <button onClick={() => handleSend()} className="w-12 h-12 bg-tg-primary text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer active:scale-90 transition-transform font-black">➤</button>
+            <button 
+              onClick={handleSend} 
+              className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+                inputValue.trim() ? 'bg-tg-primary text-white' : 'bg-tg-sidebar text-tg-primary opacity-50'
+              }`}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+              </svg>
+            </button>
           </div>
         </footer>
       </main>
