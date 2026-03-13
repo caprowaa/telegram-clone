@@ -164,12 +164,12 @@ export default function TelegramClone() {
               }`}
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                <path d="M2.01 21L23 12 2 .01 3 2 10l15 2-15 2z"></path>
               </svg>
             </button>
           </div>
         </footer>
-      </main>
+      </m in> 
     </div>
   );
 }
